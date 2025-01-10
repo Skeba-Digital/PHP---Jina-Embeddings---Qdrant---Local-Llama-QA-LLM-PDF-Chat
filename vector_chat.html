@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>NodeCodeStudio - Jina Embeddings + Qdrant + Local Llama QA</title>
+    <!-- pdf.js -->
+    <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.6.172/build/pdf.min.js"></script>
+    <style>
+      /* Basic styles for better visibility */
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f5f5f5;
+      }
+      .spinner {
+        border: 4px solid rgba(0, 0, 0, 0.1);
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        border-left-color: #09f;
+        animation: spin 1s linear infinite;
+        display: inline-block;
+        vertical-align: middle;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      /* Chat Window Styles */
+      #chatContainer {
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        width: 100%;
+        max-width: 800px;
+        height: 600px; /* Increased height for better usability */
+        background-color: #fff;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        margin-top: 20px;
+        position: relative;
+      }
+      #chatWindow {
+        flex: 1;
+        padding: 10px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+      }
+      .message {
+        max-width: 70%;
+        padding: 10px;
+        margin: 5px 0;
+        border-radius: 10px;
+        position: relative;
+      }
+      .userMsg {
+        align-self: flex-end;
+        background-color: #dcf8c6;
+        color: #000;
+      }
+      .assistantMsg {
+        align-self: flex-start;
+        background-color: #f1f0f0;
+        color: #000;
+      }
+      .message .reference-btn {
+        margin-top: 5px;
+        background-color: transparent;
+        border: none;
+        color: #007bff;
+        cursor: pointer;
+        padding: 0;
+        font-size: 0.9em;
+        text-decoration: underline;
+      }
+      /* Modal Styles */
+      .modal {
+        display: none; /* Hidden by default */
+        position: fixed; /* Stay in place */
+        z-index: 1000; /* Sit on top */
+        left: 0;
+        top: 0;
+        width: 100%; /* Full width */
+        height: 100%; /* Full height */
+        overflow: auto; /* Enable scroll if needed */
+        background-color: rgba(0, 0, 0, 0.4); /* Black w/ opacity */
+      }
+      .modal-content {
+        background-color: #fefefe;
+        margin: 10% auto; /* 10% from the top and centered */
+        padding: 20px;
+        border: 1px solid #888;
+        width: 80%;
+        max-width: 500px; /* Could be more or less, depending on screen size */
+        border-radius: 5px;
+      }
+      .close {
+        color: #aaa;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+      .close:hover,
+      .close:focus {
+        color: black;
+        text-decoration: none;
+      }
+      /* Scrollbar Styling */
+      #chatWindow::-webkit-scrollbar {
+        width: 8px;
+      }
+      #chatWindow::-webkit-scrollbar-thumb {
+        background-color: rgba(0, 0, 0, 0.2);
+        border-radius: 4px;
+      }
+      /* Chat Input Styles */
+      #chatInputContainer {
+        border-top: 1px solid #ccc;
+        padding: 10px;
+        display: flex;
+        align-items: center;
+        background-color: #fafafa;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      #userQuestion {
+        flex: 1;
+        resize: none;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        font-size: 1em;
+        height: 40px; /* Fixed height for consistency */
+      }
+      #askBtn {
+        margin-left: 10px;
+        padding: 10px 20px;
+        font-size: 1em;
+        border: none;
+        border-radius: 5px;
+        background-color: #09f;
+        color: #fff;
+        cursor: pointer;
+      }
+      #askBtn:hover {
+        background-color: #007acc;
+      }
+      /* Additional Controls Styles */
+      #additionalControls {
+        border-top: 1px solid #ccc;
+        padding: 10px;
+        display: flex;
+        align-items: center;
+        background-color: #fafafa;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      #addDocumentBtn {
+        padding: 8px 12px;
+        font-size: 1.2em;
+        border: none;
+        border-radius: 5px;
+        background-color: #28a745;
+        color: #fff;
+        cursor: pointer;
+        margin-right: 10px;
+      }
+      #addDocumentBtn:hover {
+        background-color: #218838;
+      }
+      #uploadBtn {
+        padding: 8px 12px;
+        font-size: 1em;
+        border: none;
+        border-radius: 5px;
+        background-color: #007bff;
+        color: #fff;
+        cursor: pointer;
+        margin-right: 10px;
+        display: none; /* Hidden initially */
+      }
+      #uploadBtn:hover {
+        background-color: #0069d9;
+      }
+      #toggleDocumentsBtn {
+        padding: 8px 12px;
+        font-size: 1em;
+        border: none;
+        border-radius: 5px;
+        background-color: #6c757d;
+        color: #fff;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+      }
+      #toggleDocumentsBtn:hover {
+        background-color: #5a6268;
+      }
+      #toggleDocumentsBtn .arrow {
+        margin-left: 5px;
+        transition: transform 0.3s;
+      }
+      #documentsList {
+        display: none; /* Hidden initially */
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-top: 1px solid #ccc;
+        max-height: 150px;
+        overflow-y: auto;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .documentItemChat {
+        margin-bottom: 5px;
+      }
+      /* File Snippet Styles */
+      #fileSnippets {
+        margin-top: 10px;
+        width: 100%;
+      }
+      .fileSnippet {
+        display: flex;
+        align-items: center;
+        margin-bottom: 5px;
+      }
+      .fileSnippet img {
+        width: 24px;
+        height: 24px;
+        margin-right: 10px;
+      }
+      .fileSnippet p {
+        margin: 0;
+        font-size: 0.9em;
+        word-break: break-all;
+      }
+      /* Responsive Adjustments */
+      @media (max-width: 600px) {
+        #askBtn {
+          padding: 8px 16px;
+          font-size: 0.9em;
+        }
+        #userQuestion {
+          font-size: 0.9em;
+          height: 40px;
+        }
+        #addDocumentBtn, #uploadBtn, #toggleDocumentsBtn {
+          padding: 6px 10px;
+          font-size: 0.9em;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>NodeCodeStudio - Jina Embeddings + Qdrant + Local Llama QA</h1>
+
+    <!-- Data Type Selection Section -->
+ 
+    <!-- Upload Section (Optional: If you want to keep it outside the chat) -->
+    <!-- You can remove or keep this section based on your preference -->
+
+
+    <!-- Chat Window -->
+    <div id="chatContainer">
+      <div id="chatWindow"></div>
+      
+      <!-- Chat Input Container (Ask Box) -->
+      <div id="chatInputContainer">
+        <textarea
+          id="userQuestion"
+          rows="1"
+          placeholder="Ask about your document..."
+        ></textarea>
+        <button id="askBtn">Ask</button>
+      </div>
+      
+      <!-- Additional Controls -->
+<div id="additionalControls">
+  <button id="addDocumentBtn">+</button>
+  <input type="file" id="hiddenFileInput" style="display: none;" multiple />
+  <button id="uploadBtn">Upload</button>
+  <button id="toggleDocumentsBtn">Documents <span class="arrow">▼</span></button>
+</div>
+      
+      <!-- Documents List Toggle -->
+      <div id="documentsList"></div>
+      
+      <!-- File Snippets Preview -->
+      <div id="fileSnippets"></div>
+    </div>
+
+    <!-- Reference Modal -->
+    <div id="referenceModal" class="modal">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <h3>References</h3>
+        <div id="modalReferences"></div>
+      </div>
+    </div>
+
+<script>
+  // Set the base URL for PHP endpoints
+  const BASE_URL = `https://yoursite.com`;
+      // ---------------------------------------
+      // 1) USER ID assignment (start with 1)
+      // ---------------------------------------
+      const USER_ID = 1;
+
+      // ---------------------------------------
+      // 2) Function to fetch and display documents
+      // ---------------------------------------
+  async function fetchDocuments() {
+  try {
+    const apiUrl = `${BASE_URL}list_documents.php?user_id=${USER_ID}&data_type=documents`;
+
+    const response = await fetch(apiUrl, {
+      method: "GET",
+      mode: "cors",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Server error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const documents = data.documents;
+
+    // Chat Documents List
+    const chatDocumentsListDiv = document.getElementById("documentsList");
+    chatDocumentsListDiv.innerHTML = ""; // Clear existing list
+
+    // Add Select All Option
+    const selectAllDiv = document.createElement("div");
+    selectAllDiv.className = "documentItemChat";
+
+    const selectAllCheckbox = document.createElement("input");
+    selectAllCheckbox.type = "checkbox";
+    selectAllCheckbox.id = "select-all-documents";
+
+    const selectAllLabel = document.createElement("label");
+    selectAllLabel.htmlFor = "select-all-documents";
+    selectAllLabel.textContent = " Select All Documents";
+
+    selectAllDiv.appendChild(selectAllCheckbox);
+    selectAllDiv.appendChild(selectAllLabel);
+    chatDocumentsListDiv.appendChild(selectAllDiv);
+
+    // Add event listener for Select All
+    selectAllCheckbox.addEventListener("change", (e) => {
+      const checkboxes = document.querySelectorAll("#documentsList input[type='checkbox']");
+      const isChecked = e.target.checked;
+      checkboxes.forEach((checkbox) => {
+        if (checkbox !== selectAllCheckbox) {
+          checkbox.checked = isChecked;
+        }
+      });
+    });
+
+    // Add individual document checkboxes
+    if (documents.length === 0) {
+      chatDocumentsListDiv.innerHTML += "<p>No documents available.</p>";
+    } else {
+      documents.forEach((doc) => {
+        const docDiv = document.createElement("div");
+        docDiv.className = "documentItemChat";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.id = `chat-doc-${doc.doc_id}`;
+        checkbox.value = doc.doc_id;
+
+        const label = document.createElement("label");
+        label.htmlFor = `chat-doc-${doc.doc_id}`;
+        label.textContent = ` ${doc.file_name} (Uploaded: ${new Date(
+          doc.uploaded_at
+        ).toLocaleString()})`;
+
+        docDiv.appendChild(checkbox);
+        docDiv.appendChild(label);
+        chatDocumentsListDiv.appendChild(docDiv);
+      });
+    }
+  } catch (error) {
+    console.error("Error fetching documents:", error);
+    const chatDocumentsListDiv = document.getElementById("documentsList");
+    chatDocumentsListDiv.innerHTML = `<p style="color: red;">Error fetching documents: ${error.message}</p>`;
+  }
+}
+
+      // ---------------------------------------
+      // 3) Set Up Event Listeners
+      // ---------------------------------------
+   window.onload = () => {
+  // Fetch documents on page load
+  fetchDocuments();
+
+  // Reference to elements
+  const addDocumentBtn = document.getElementById("addDocumentBtn");
+  const hiddenFileInput = document.getElementById("hiddenFileInput");
+  const uploadBtn = document.getElementById("uploadBtn");
+  const toggleDocumentsBtn = document.getElementById("toggleDocumentsBtn");
+  const documentsList = document.getElementById("documentsList");
+  const fileSnippets = document.getElementById("fileSnippets");
+  const arrow = toggleDocumentsBtn.querySelector(".arrow");
+
+  // Handle Add Document (+) Button Click
+  addDocumentBtn.addEventListener("click", () => {
+    hiddenFileInput.click(); // Trigger the hidden file input
+  });
+
+  // Handle File Selection
+  hiddenFileInput.addEventListener("change", (event) => {
+    const selectedFiles = Array.from(event.target.files);
+    if (selectedFiles.length > 0) {
+      displayFileSnippets(selectedFiles); // Display file snippets
+      uploadBtn.style.display = "inline-block"; // Show upload button
+    } else {
+      uploadBtn.style.display = "none"; // Hide upload button
+      fileSnippets.innerHTML = ""; // Clear file snippets
+    }
+  });
+
+  // Handle Upload Button Click
+  uploadBtn.addEventListener("click", async () => {
+    const selectedFiles = Array.from(hiddenFileInput.files);
+    if (selectedFiles.length === 0) {
+      alert("No files selected for upload.");
+      return;
+    }
+    await processAndUploadFiles(selectedFiles);
+    hiddenFileInput.value = ""; // Reset hidden file input
+  });
+
+  // Handle Toggle Documents Button Click
+  toggleDocumentsBtn.addEventListener("click", () => {
+    if (documentsList.style.display === "none" || documentsList.style.display === "") {
+      documentsList.style.display = "block";
+      arrow.style.transform = "rotate(180deg)";
+    } else {
+      documentsList.style.display = "none";
+      arrow.style.transform = "rotate(0deg)";
+    }
+  });
+};
+
+      // ---------------------------------------
+      // 4) Handle Ask Button
+      // ---------------------------------------
+document.getElementById("askBtn").addEventListener("click", async () => {
+  const question = document.getElementById("userQuestion").value.trim();
+  const chatWindow = document.getElementById("chatWindow");
+  const statusDiv = document.getElementById("status");
+
+  if (!question) {
+    alert("Please enter a question.");
+    return;
+  }
+
+  // Display the user's question in the chat window
+  addMessageToChat("You: " + question, "user");
+
+  // Clear the input box
+  document.getElementById("userQuestion").value = "";
+
+  // Retrieve selected documents
+  const selectedDocuments = [];
+  const checkboxes = document.querySelectorAll("#documentsList input[type='checkbox']:checked");
+  checkboxes.forEach((cb) => {
+    if (cb.value) {
+      selectedDocuments.push(cb.value);
+    }
+  });
+
+  // Check for selected documents
+  if (selectedDocuments.length === 0) {
+    alert("Please select at least one document.");
+    return;
+  }
+
+  // Show spinner and status
+  if (statusDiv) {
+    statusDiv.innerHTML = `<div class="spinner"></div> Searching...`;
+  }
+
+  try {
+    const searchPayload = {
+      user_id: USER_ID,
+      data_type: "documents",
+      query: question,
+      limit: 3,
+      selected_documents: selectedDocuments,
+      timeframe: 7, // last 7 days
+    };
+
+    console.log("Sending payload to backend:", searchPayload);
+    const apiUrl = `${BASE_URL}search_chunks.php?user_id=${USER_ID}&data_type=documents`;
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      mode: "cors",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(searchPayload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `Server error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log("Received response from backend:", data);
+
+    const results = data.results || [];
+    if (results.length === 0) {
+      addMessageToChat("Assistant: Sorry, I couldn't find relevant information.", "assistant");
+      if (statusDiv) statusDiv.innerHTML = "";
+      return;
+    }
+
+    let context = "Relevant Document Chunks:\n";
+    const references = [];
+    results.forEach((r, i) => {
+      const payload = r.payload;
+      if (payload && payload.chunk) {
+        context += `Doc #${i + 1} => File: ${payload.file_name}\n${payload.chunk}\n\n`;
+        references.push(`File: ${payload.file_name}`);
+      }
+    });
+
+    // Truncate context if necessary
+    const maxContextLength = 2000;
+    if (context.length > maxContextLength) {
+      context = context.slice(0, maxContextLength) + "...";
+    }
+
+    // Pass the question + context to local LLM
+    const llamaRequest = {
+      model: "llama-3.2-3b-instruct",
+      messages: [
+        { role: "system", content: "Answer the user's question as a business assistant." },
+        { role: "user", content: `Context:\n${context}\n\nQuestion: ${question}` },
+      ],
+      temperature: 0.7,
+      max_tokens: -1,
+      stream: false,
+    };
+
+    let answer = "";
+    try {
+      const resp = await fetch("http://localhost:1234/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(llamaRequest),
+      });
+
+      const llamaJson = await resp.json();
+      answer = llamaJson?.choices?.[0]?.message?.content || "No response.";
+    } catch (err) {
+      console.error("Error calling local Llama:", err);
+      answer = "Error calling local Llama: " + err.toString();
+    }
+
+    addAssistantMessage(answer, references);
+
+    if (statusDiv) statusDiv.innerHTML = ""; // Clear status
+  } catch (error) {
+    console.error("Error during Ask:", error);
+    if (statusDiv) {
+      statusDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+    }
+    addMessageToChat("Assistant: Sorry, I couldn't retrieve relevant information.", "assistant");
+  }
+
+  scrollToBottom();
+});
+
+      // ----------------------
+      // Utility Functions
+      // ----------------------
+      function generateUUID() {
+        var d = new Date().getTime();
+        var d2 = (performance && performance.now && performance.now() * 1000) || 0;
+        return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+          var r = Math.random() * 16;
+          if (d > 0) {
+            r = (d + r) % 16 | 0;
+            d = Math.floor(d / 16);
+          } else {
+            r = (d2 + r) % 16 | 0;
+            d2 = Math.floor(d2 / 16);
+          }
+          return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+        });
+      }
+
+   async function parsePdfFile(file) {
+  const reader = new FileReader();
+  return new Promise((resolve, reject) => {
+    reader.onload = async function () {
+      const typedarray = new Uint8Array(this.result);
+      try {
+        const pdfDoc = await pdfjsLib.getDocument(typedarray).promise;
+        let combinedText = "";
+
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          const page = await pdfDoc.getPage(i);
+
+          // Extract text content
+          const textContent = await page.getTextContent();
+          const annotations = await page.getAnnotations();
+
+          const annotatedText = textContent.items.map((item) => {
+            const matchingAnnotation = annotations.find(
+              (anno) =>
+                anno.rect &&
+                item.transform &&
+                anno.rect[1] >= item.transform[5] && // Match the Y position
+                anno.rect[3] <= item.transform[5] &&
+                anno.rect[0] <= item.transform[4] && // Match the X position
+                anno.rect[2] >= item.transform[4]
+            );
+
+            if (matchingAnnotation && matchingAnnotation.url) {
+              // If a link is found, format the text with a Markdown-style link
+              return `(${item.str})[${matchingAnnotation.url}]`;
+            }
+
+            return item.str;
+          });
+
+          combinedText += annotatedText.join(" ") + "\n";
+        }
+
+        resolve(combinedText.trim());
+      } catch (e) {
+        console.error("Error parsing PDF:", e);
+        reject(e);
+      }
+    };
+
+    reader.onerror = (e) => {
+      console.error("FileReader error:", e);
+      reject(e);
+    };
+
+    reader.readAsArrayBuffer(file);
+  });
+}e
+
+      async function readTextFile(file) {
+        const reader = new FileReader();
+        return new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = (e) => {
+            console.error("FileReader error:", e);
+            reject(e);
+          };
+          reader.readAsText(file, "utf-8");
+        });
+      }
+
+      function chunkText(text, chunkSize, overlap) {
+        const chunkObjects = [];
+        let start = 0;
+        let partNumber = 1;
+
+        while (start < text.length) {
+          let end = start + chunkSize;
+          if (end > text.length) end = text.length;
+          const chunk = text.slice(start, end).trim();
+          if (chunk.length > 0) {
+            chunkObjects.push({
+              chunk: chunk,
+              part: partNumber,
+            });
+            partNumber++;
+          }
+          start += chunkSize - overlap;
+        }
+        return chunkObjects;
+      }
+
+      // ---------------------------------------
+      // Chat UI Functions
+      // ---------------------------------------
+      function addMessageToChat(message, sender) {
+        const chatWindow = document.getElementById("chatWindow");
+        const messageDiv = document.createElement("div");
+        messageDiv.className = "message " + (sender === "user" ? "userMsg" : "assistantMsg");
+        messageDiv.textContent = message;
+        chatWindow.appendChild(messageDiv);
+        scrollToBottom();
+      }
+
+      function addAssistantMessage(message, references) {
+        const chatWindow = document.getElementById("chatWindow");
+        const messageDiv = document.createElement("div");
+        messageDiv.className = "message assistantMsg";
+
+        const messageContent = document.createElement("span");
+        messageContent.textContent = "Assistant: " + message;
+        messageDiv.appendChild(messageContent);
+
+        if (references && references.length > 0) {
+          const refButton = document.createElement("button");
+          refButton.className = "reference-btn";
+          refButton.textContent = "Show References";
+          refButton.onclick = () => showReferences(references);
+          messageDiv.appendChild(refButton);
+        }
+
+        chatWindow.appendChild(messageDiv);
+        scrollToBottom();
+      }
+
+      function scrollToBottom() {
+        const chatWindow = document.getElementById("chatWindow");
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+      }
+
+      // ---------------------------------------
+      // Reference Modal Functions
+      // ---------------------------------------
+function showReferences(references) {
+  const modal = document.getElementById("referenceModal");
+  const modalReferences = document.getElementById("modalReferences");
+  modalReferences.innerHTML = ""; // Clear previous references
+
+  references.forEach((ref) => {
+    const refItem = document.createElement("p");
+    refItem.textContent = ref;
+    modalReferences.appendChild(refItem);
+  });
+
+  modal.style.display = "block"; // Show the modal
+}
+
+// Close the modal when clicking the "X" button
+document.querySelector(".close").addEventListener("click", () => {
+  const modal = document.getElementById("referenceModal");
+  modal.style.display = "none"; // Hide the modal
+});
+
+// Close the modal when clicking outside the modal content
+window.addEventListener("click", (event) => {
+  const modal = document.getElementById("referenceModal");
+  if (event.target === modal) {
+    modal.style.display = "none"; // Hide the modal
+  }
+});
+      // ---------------------------------------
+      // Display File Snippets
+      // ---------------------------------------
+      function displayFileSnippets(files) {
+        const fileSnippets = document.getElementById("fileSnippets");
+        fileSnippets.innerHTML = ""; // Clear previous snippets
+
+        files.forEach(file => {
+          const snippetDiv = document.createElement("div");
+          snippetDiv.className = "fileSnippet";
+
+          // Determine file type
+          if (file.type === "text/plain") {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+              const content = e.target.result;
+              const lines = content.split("\n").slice(0, 3).join("\n"); // First 3 lines
+              snippetDiv.innerHTML = `
+                <img src="https://img.icons8.com/color/48/000000/text-file.png" alt="Text File Icon" />
+                <div>
+                  <p><strong>${file.name}</strong></p>
+                  <pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word;">${lines}...</pre>
+                </div>
+              `;
+            };
+            reader.readAsText(file);
+          } else if (file.type === "application/pdf") {
+            // For PDFs, show an icon and file name (previewing PDFs requires more complex handling)
+            snippetDiv.innerHTML = `
+              <img src="https://img.icons8.com/color/48/000000/pdf-2--v1.png" alt="PDF File Icon" />
+              <div>
+                <p><strong>${file.name}</strong></p>
+                <p>PDF preview not available.</p>
+              </div>
+            `;
+          } else {
+            // Unsupported file type
+            snippetDiv.innerHTML = `
+              <img src="https://img.icons8.com/color/48/000000/file.png" alt="File Icon" />
+              <div>
+                <p><strong>${file.name}</strong></p>
+                <p>Preview not available.</p>
+              </div>
+            `;
+          }
+
+          fileSnippets.appendChild(snippetDiv);
+        });
+      }
+
+      // ---------------------------------------
+      // Process and Upload Files Function
+      // ---------------------------------------
+    async function processAndUploadFiles(files) {
+  const statusDiv = document.getElementById("status");
+
+  if (statusDiv) {
+    statusDiv.innerHTML = `<div class="spinner"></div> Processing and uploading ${files.length} document(s)...`;
+  }
+
+  try {
+    let allPoints = [];
+
+    for (const file of files) {
+      let textContent = "";
+      if (file.type === "application/pdf") {
+        textContent = await parsePdfFile(file);
+      } else if (file.type === "text/plain") {
+        textContent = await readTextFile(file);
+      } else {
+        throw new Error(`Unsupported file type: ${file.name}`);
+      }
+
+      const chunkObjects = chunkText(textContent, 1024, 100);
+      if (chunkObjects.length === 0) {
+        throw new Error(`No extractable text found in the document: ${file.name}`);
+      }
+
+      // Embed the chunks via Jina
+      const phpEmbeddingsURL = `${BASE_URL}embeddings.php`;
+      const embeddingResponse = await fetch(phpEmbeddingsURL, {
+        mode: "cors",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          texts: chunkObjects.map((obj) => obj.chunk),
+        }),
+      });
+
+      if (!embeddingResponse.ok) {
+        const errorData = await embeddingResponse.json();
+        throw new Error(errorData.error || `Server error: ${embeddingResponse.statusText}`);
+      }
+
+      const embeddingData = await embeddingResponse.json();
+      const embeddings = embeddingData.embeddings;
+      if (embeddings.length !== chunkObjects.length) {
+        throw new Error("Mismatch between number of chunks and embeddings.");
+      }
+
+      // Prepare points
+      const points = chunkObjects.map((obj, index) => ({
+        id: generateUUID(),
+        vector: embeddings[index],
+        metadata: {
+          type: "document",
+          user_id: USER_ID,
+          file_name: file.name,
+          uploaded_at: new Date().toISOString(),
+          chunk_number: obj.part,
+          chunk: obj.chunk,
+        },
+      }));
+
+      allPoints = allPoints.concat(points);
+    }
+
+    // Determine selected data type
+    const dataTypeRadio = document.querySelector('input[name="dataType"]:checked');
+    const dataType = dataTypeRadio ? dataTypeRadio.value : "documents";
+
+    // Upload points
+    const phpUploadURL = `${BASE_URL}upload_chunks.php`;
+    const uploadResponse = await fetch(phpUploadURL, {
+      mode: "cors",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        user_id: USER_ID,
+        data_type: dataType,
+        points: allPoints,
+      }),
+    });
+
+    if (!uploadResponse.ok) {
+      const errorData = await uploadResponse.json();
+      throw new Error(errorData.error || `Server error: ${uploadResponse.statusText}`);
+    }
+
+    if (statusDiv) {
+      statusDiv.innerHTML = `<p style="color: green;">Documents uploaded and processed successfully.</p>`;
+    }
+
+    // Clear file inputs
+    document.getElementById("hiddenFileInput").value = "";
+    document.getElementById("uploadBtn").style.display = "none";
+    document.getElementById("fileSnippets").innerHTML = "";
+
+    // Refresh document lists
+    fetchDocuments();
+  } catch (error) {
+    console.error("Error processing upload:", error);
+    if (statusDiv) {
+      statusDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+    }
+  }
+}
+    </script>
+  </body>
+</html>
